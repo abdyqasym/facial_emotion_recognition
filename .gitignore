@@ -1,0 +1,14 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+env/
+
+# Datasets and Heavy Weights
+data/
+*.pth
+*.h5
+*.zip
+
+# OS
+.DS_Store
