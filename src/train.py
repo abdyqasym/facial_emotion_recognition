@@ -146,6 +146,8 @@ def evaluate(model, dataloader, criterion, class_names, print_report=False):
 
 
 def run_experiment(experiment_name, use_sota, epochs):
+    # Reset initialization and data-order RNG so the two experiments start comparably.
+    set_seed()
     print(f"\\n--- {experiment_name}: augmentation={'ON' if use_sota else 'OFF'} ---")
     train_loader, val_loader, test_loader, class_to_idx = load_datasets(use_sota)
     class_names = [name for name, _ in sorted(class_to_idx.items(), key=lambda x: x[1])]
