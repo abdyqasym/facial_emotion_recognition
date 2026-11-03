@@ -45,7 +45,6 @@ def generate_talking_head(
         "--size", str(size),
         "--batch_size", "1",
         "--preprocess", "crop",
-        "--still",
     ]
     completed = subprocess.run(
         command,
