@@ -216,6 +216,10 @@ def run_experiment(experiment_name, use_sota, epochs):
         checkpoint_path = MODEL_DIR / "mobilenet_emotion.pth"
         torch.save(model.state_dict(), checkpoint_path)
         print(f"Saved app checkpoint: {checkpoint_path}")
+    else:
+        checkpoint_path = MODEL_DIR / "baseline_mobilenet_emotion.pth"
+        torch.save(model.state_dict(), checkpoint_path)
+        print(f"Saved baseline checkpoint for hard-case mining: {checkpoint_path}")
 
     print(f"Saved test metrics: {result_path}")
     return result
