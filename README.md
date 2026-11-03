@@ -57,6 +57,20 @@ Run both experiments with the same fixed train/validation/test folders:
 python src/train.py --experiment all --epochs 5
 ```
 
+The baseline checkpoint is saved as `models/baseline_mobilenet_emotion.pth`. To run an **ArtAug-inspired hard-case improvement loop** for the assignment's backlight/pose cases:
+
+```bash
+python src/artaug.py --top-k 50
+```
+
+The script ranks only images from `data/train` by the baseline model's true-class confidence, then creates four label-preserving low-light/backlight/pose variants for the most difficult training examples. Review the generated images in `data/artaug_train/<class>/`, then copy approved variants into the matching `data/train/<class>/` folders and retrain:
+
+```bash
+python src/train.py --experiment augmented --epochs 5
+```
+
+This is an **ArtAug-inspired local synthesis-understanding loop**, not the official ArtAug system. It must never mine or add validation/test images to training. Keep the original validation/test splits unchanged and compare held-out test Macro-F1 before and after the hard-case augmentation.
+
 Or run one experiment:
 
 ```bash
@@ -144,6 +158,7 @@ Images uploaded to Streamlit are processed by the machine hosting the app. In a 
 - `src/augment_data.py`: optional offline augmentation utility. Do not run this before splitting the original dataset.
 - `app/app.py`: Streamlit interface, portrait Grad-CAM, and talking-head frame evaluation workflow.
 - `src/talking_head.py`: SadTalker CLI adapter and video-frame sampler.
+- `src/artaug.py`: training-only hard-case mining and targeted backlight/pose variants (ArtAug-inspired).
 - `data/`: local dataset (not committed).
 - `models/`: trained weights (not committed).
 - `results/`: generated metric CSV files.
