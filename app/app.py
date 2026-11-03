@@ -9,7 +9,7 @@ import torch
 import torch.nn as nn
 from torchvision import transforms
 from torchvision.models import mobilenet_v2
-from sklearn.metrics import f1_score
+from pathlib import Path
 
 # --- PAGE CONFIGURATION ---
 st.set_page_config(
@@ -130,18 +130,26 @@ transform = transforms.Compose([
 
 @st.cache_resource
 def load_emotion_model():
+  model_path = Path(__file__).resolve().parents[1] / "models" / "mobilenet_emotion.pth"
+  if not model_path.is_file():
+    raise FileNotFoundError(
+        f"Trained weights were not found: {model_path}. "
+        "Run the training script first (python src/train.py --experiment all) "
+        "and make sure models/mobilenet_emotion.pth is available."
+    )
+
   model = mobilenet_v2(weights=None)
   model.classifier[1] = nn.Linear(model.last_channel, len(CLASSES))
-  try:
-    model.load_state_dict(
-        torch.load("models/mobilenet_emotion.pth", map_location="cpu")
-    )
-  except FileNotFoundError:
-    pass
+  state_dict = torch.load(model_path, map_location="cpu")
+  model.load_state_dict(state_dict, strict=True)
   model.eval()
   return model
 
-model = load_emotion_model()
+try:
+  model = load_emotion_model()
+except (FileNotFoundError, RuntimeError) as error:
+  st.error(f"Model could not be loaded: {error}")
+  st.stop()
 
 
 # --- GRAD-CAM COMPUTATION ---
@@ -192,7 +200,7 @@ with st.sidebar:
   )
   mode = st.radio(
       "Choose evaluation workflow:",
-      ["Single Portrait & Grad-CAM", "VASA-1 Stress-Test (Timeline)"],
+      ["Single Portrait & Grad-CAM", "Noise Robustness Test (Timeline)"],
       label_visibility="collapsed",
   )
 
@@ -257,60 +265,61 @@ if mode == "Single Portrait & Grad-CAM":
     )
     m3.metric("Latency", f"{inference_time:.1f} ms")
 
-elif mode == "VASA-1 Stress-Test (Timeline)":
-  st.subheader("VASA-1 Animation Stress-Test")
+elif mode == "Noise Robustness Test (Timeline)":
+  st.subheader("Noise Robustness Test")
+  st.caption(
+      "This experiment adds small Gaussian noise to one uploaded image and "
+      "measures whether the model keeps its original prediction. It is not a "
+      "VASA-1 animation or a ground-truth accuracy evaluation."
+  )
 
-  c1, c2 = st.columns(2)
-  with c1:
-    uploaded_file = st.file_uploader(
-        "Upload Portrait Image", type=["jpg", "jpeg", "png"]
-    )
-  with c2:
-    audio_file = st.file_uploader("Upload Audio (MP3/WAV)", type=["wav", "mp3"])
+  uploaded_file = st.file_uploader(
+      "Upload Portrait Image", type=["jpg", "jpeg", "png"]
+  )
 
-  if uploaded_file is not None and audio_file is not None:
-    st.audio(audio_file)
-
+  if uploaded_file is not None:
     image = Image.open(uploaded_file).convert("RGB")
     input_tensor = transform(image).unsqueeze(0)
 
-    # 1. Получаем предсказание чистого исходника (Считаем это за Ground Truth)
-    _, true_idx, _ = compute_gradcam(input_tensor, model)
-    y_true = [true_idx] * 30
-    y_pred = []
-
+    _, reference_idx, _ = compute_gradcam(input_tensor.clone(), model)
+    predictions = []
     frames_data = []
-    np.random.seed(42)
 
+    # Fixed seed makes the perturbation sequence reproducible.
+    generator = torch.Generator(device="cpu").manual_seed(42)
     for frame_idx in range(30):
-      noise_tensor = input_tensor + torch.randn_like(input_tensor) * 0.04
+      noise = torch.randn(
+          input_tensor.shape, generator=generator, dtype=input_tensor.dtype
+      ) * 0.04
+      noise_tensor = input_tensor + noise
       _, pred_idx, probs = compute_gradcam(noise_tensor, model)
-      
-      y_pred.append(pred_idx) # Сохраняем реальное предсказание кадра
+      predictions.append(pred_idx)
 
       frames_data.append({
           "Frame": frame_idx + 1,
-          "Happy": probs[0],
-          "Neutral": probs[1],
-          "Sad": probs[2],
+          "Happy": float(probs[0]),
+          "Neutral": float(probs[1]),
+          "Sad": float(probs[2]),
           "Predicted": CLASSES[pred_idx],
       })
 
     df_frames = pd.DataFrame(frames_data)
+    stability_rate = (
+        np.asarray(predictions) == reference_idx
+    ).mean() * 100
 
-    st.markdown("### Per-Frame Emotion Probability Timeline")
+    st.markdown("### Prediction Probability Under Input Perturbations")
     st.line_chart(df_frames.set_index("Frame")[["Happy", "Neutral", "Sad"]])
 
-    # 2. ЧЕСТНЫЙ МАТЕМАТИЧЕСКИЙ РАСЧЕТ F1 и СТАБИЛЬНОСТИ
-    real_f1 = f1_score(y_true, y_pred, average='weighted', zero_division=0)
-    stability_rate = (np.array(y_true) == np.array(y_pred)).mean() * 100
-
-    st.markdown("### Per-Frame Performance Metrics")
-    res_col1, res_col2, res_col3 = st.columns(3)
-    
-    res_col1.metric("Sequence Predominant", df_frames["Predicted"].mode()[0])
-    res_col2.metric("Per-Frame Stability", f"{stability_rate:.1f}%")
-    res_col3.metric("Animation F1-Score", f"{real_f1:.3f}")
+    st.markdown("### Robustness Metrics")
+    res_col1, res_col2 = st.columns(2)
+    res_col1.metric("Original Prediction", CLASSES[reference_idx])
+    res_col2.metric("Prediction Consistency", f"{stability_rate:.1f}%")
+    st.caption(
+        "Consistency is the share of noisy inputs that retain the prediction "
+        "made for the clean image. It is not Accuracy or F1-score because no "
+        "independent ground-truth labels are supplied."
+    )
 
 # --- FOOTER ---
 st.markdown(
