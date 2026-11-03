@@ -1,4 +1,5 @@
 import time
+import io
 import tempfile
 import subprocess
 import platform
@@ -453,7 +454,7 @@ elif mode == "Talking-Head Animation Evaluation (SadTalker)":
     if annotation_bytes:
       from sklearn.metrics import f1_score
       try:
-        annotation_df = pd.read_csv(pd.io.common.BytesIO(annotation_bytes))
+        annotation_df = pd.read_csv(io.BytesIO(annotation_bytes))
         required_columns = {"frame", "emotion"}
         if not required_columns.issubset(annotation_df.columns):
           raise ValueError("CSV must contain columns named 'frame' and 'emotion'.")
