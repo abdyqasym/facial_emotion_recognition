@@ -1,6 +1,7 @@
 import time
 import tempfile
 import subprocess
+import platform
 from pathlib import Path
 import cv2
 import matplotlib.pyplot as plt
@@ -311,7 +312,20 @@ elif mode == "Talking-Head Animation Evaluation (SadTalker)":
       "SadTalker dependencies and weights are separate from this project's requirements."
   )
 
-  if st.button("Generate video and evaluate frames", type="primary", disabled=(portrait_file is None or audio_file is None)):
+  consent_given = st.checkbox(
+      "I have permission to use this person's portrait and audio, and understand the generated video is synthetic.",
+      value=False,
+  )
+  st.caption(
+      "Synthetic-media notice: generated output is AI-animated and must be disclosed as synthetic. "
+      "Do not use another person's face or voice without consent."
+  )
+
+  if st.button(
+      "Generate video and evaluate frames",
+      type="primary",
+      disabled=(portrait_file is None or audio_file is None or not consent_given),
+  ):
     try:
       with tempfile.TemporaryDirectory(prefix="emotion_lab_") as temp_dir:
         temp_path = Path(temp_dir)
@@ -337,10 +351,13 @@ elif mode == "Talking-Head Animation Evaluation (SadTalker)":
           frame_rows = []
           heatmap_images = []
           frame_predictions = []
+          frame_inference_times = []
           for sampled_index, (timestamp, frame_rgb) in enumerate(samples, start=1):
             frame_image = Image.fromarray(frame_rgb)
             input_tensor = transform(frame_image).unsqueeze(0)
+            inference_start = time.perf_counter()
             cam, pred_idx, probs = compute_gradcam(input_tensor, model)
+            frame_inference_times.append((time.perf_counter() - inference_start) * 1000)
             frame_predictions.append(CLASSES[pred_idx])
             frame_rows.append({
                 "Sampled frame": sampled_index,
@@ -370,6 +387,11 @@ elif mode == "Talking-Head Animation Evaluation (SadTalker)":
           st.session_state["talking_head_video"] = video_bytes
           st.session_state["talking_head_frames"] = frame_df
           st.session_state["talking_head_heatmaps"] = heatmap_images
+          video_info["avg_frame_inference_ms"] = float(np.mean(frame_inference_times))
+          video_info["inference_device"] = (
+              torch.cuda.get_device_name(0) if torch.cuda.is_available() else "CPU"
+          )
+          video_info["platform"] = platform.platform()
           st.session_state["talking_head_meta"] = video_info
           st.session_state["talking_head_still_prediction"] = CLASSES[still_pred_idx]
           st.session_state["talking_head_frame_predictions"] = frame_predictions
@@ -387,10 +409,16 @@ elif mode == "Talking-Head Animation Evaluation (SadTalker)":
     st.markdown("### Generated talking-head video")
     st.video(st.session_state["talking_head_video"])
     metadata = st.session_state["talking_head_meta"]
-    info1, info2, info3 = st.columns(3)
+    st.info("AI-GENERATED SYNTHETIC MEDIA — SadTalker animation, not an authentic recording.")
+    info1, info2, info3, info4 = st.columns(4)
     info1.metric("Video duration", f"{metadata['duration_seconds']:.1f} s")
     info2.metric("Source FPS", f"{metadata['fps']:.1f}")
     info3.metric("Analyzed frames", str(metadata["sampled_frames"]))
+    info4.metric("Avg. frame inference", f"{metadata['avg_frame_inference_ms']:.1f} ms")
+    st.caption(
+        f"Classifier device: {metadata['inference_device']} · "
+        f"Environment: {metadata['platform']}"
+    )
 
     frame_df = st.session_state["talking_head_frames"]
     st.markdown("### Per-frame emotion timeline")
