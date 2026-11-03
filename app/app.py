@@ -9,6 +9,7 @@ import torch
 import torch.nn as nn
 from torchvision import transforms
 from torchvision.models import mobilenet_v2
+from sklearn.metrics import f1_score
 
 # --- PAGE CONFIGURATION ---
 st.set_page_config(
@@ -105,17 +106,6 @@ st.markdown(
         margin-bottom: 1rem;
     }
 
-    /* Badge/Notice Box */
-    .info-card {
-        background-color: #F1F5F9;
-        border-left: 4px solid #6366F1;
-        border-radius: 8px;
-        padding: 1rem 1.25rem;
-        color: #334155;
-        font-size: 0.95rem;
-        margin-bottom: 1.5rem;
-    }
-
     /* Footer / Ethics */
     .ethics-footer {
         margin-top: 3rem;
@@ -138,7 +128,6 @@ transform = transforms.Compose([
     transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
 ])
 
-
 @st.cache_resource
 def load_emotion_model():
   model = mobilenet_v2(weights=None)
@@ -151,7 +140,6 @@ def load_emotion_model():
     pass
   model.eval()
   return model
-
 
 model = load_emotion_model()
 
@@ -286,12 +274,19 @@ elif mode == "VASA-1 Stress-Test (Timeline)":
     image = Image.open(uploaded_file).convert("RGB")
     input_tensor = transform(image).unsqueeze(0)
 
+    # 1. Получаем предсказание чистого исходника (Считаем это за Ground Truth)
+    _, true_idx, _ = compute_gradcam(input_tensor, model)
+    y_true = [true_idx] * 30
+    y_pred = []
+
     frames_data = []
     np.random.seed(42)
 
     for frame_idx in range(30):
       noise_tensor = input_tensor + torch.randn_like(input_tensor) * 0.04
       _, pred_idx, probs = compute_gradcam(noise_tensor, model)
+      
+      y_pred.append(pred_idx) # Сохраняем реальное предсказание кадра
 
       frames_data.append({
           "Frame": frame_idx + 1,
@@ -306,9 +301,16 @@ elif mode == "VASA-1 Stress-Test (Timeline)":
     st.markdown("### Per-Frame Emotion Probability Timeline")
     st.line_chart(df_frames.set_index("Frame")[["Happy", "Neutral", "Sad"]])
 
-    res_col1, res_col2 = st.columns(2)
-    res_col1.metric("Sequence Predominant Emotion", df_frames["Predicted"].mode()[0])
-    res_col2.metric("Per-Frame Stability Rate", "86.7%")
+    # 2. ЧЕСТНЫЙ МАТЕМАТИЧЕСКИЙ РАСЧЕТ F1 и СТАБИЛЬНОСТИ
+    real_f1 = f1_score(y_true, y_pred, average='weighted', zero_division=0)
+    stability_rate = (np.array(y_true) == np.array(y_pred)).mean() * 100
+
+    st.markdown("### Per-Frame Performance Metrics")
+    res_col1, res_col2, res_col3 = st.columns(3)
+    
+    res_col1.metric("Sequence Predominant", df_frames["Predicted"].mode()[0])
+    res_col2.metric("Per-Frame Stability", f"{stability_rate:.1f}%")
+    res_col3.metric("Animation F1-Score", f"{real_f1:.3f}")
 
 # --- FOOTER ---
 st.markdown(
