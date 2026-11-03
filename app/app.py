@@ -323,9 +323,11 @@ elif mode == "Noise Robustness Test (Timeline)":
 
 # --- FOOTER ---
 st.markdown(
-    '<div class="ethics-footer">🔒 <b>Biometric Data Privacy:</b> All'
-    " visual and audio processing occurs strictly in local volatile memory"
-    " (RAM). No facial embeddings or biometric profiles are stored.</div>",
+    '<div class="ethics-footer"><b>Privacy notice:</b> Uploaded images are processed'
+    " by the machine running this Streamlit app. If the app is deployed remotely,"
+    " images are sent to that server; do not upload images without appropriate"
+    " consent. This app does not intentionally save uploaded images or create"
+    " biometric identity profiles.</div>",
     unsafe_allow_html=True,
 )
 
