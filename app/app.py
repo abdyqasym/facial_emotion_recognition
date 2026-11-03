@@ -271,12 +271,6 @@ if mode == "Single Portrait & Grad-CAM":
 
 elif mode == "VASA-1 Stress-Test (Timeline)":
   st.subheader("VASA-1 Animation Stress-Test")
-  st.markdown(
-      '<div class="info-card">💡 <b>Evaluation Setup:</b> Simulating dynamic'
-      " 30-frame sequence robustness under VASA-1 talking-head concepts with"
-      " ArtAug perturbations.</div>",
-      unsafe_allow_html=True,
-  )
 
   c1, c2 = st.columns(2)
   with c1:
@@ -323,3 +317,5 @@ st.markdown(
     " (RAM). No facial embeddings or biometric profiles are stored.</div>",
     unsafe_allow_html=True,
 )
+
+#python3 -m streamlit run app/app.py --server.address 127.0.0.1
