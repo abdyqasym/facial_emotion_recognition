@@ -1,14 +1,164 @@
-# Assignment 2: Facial Emotion Recognition with SOTA & Explainability (Grad-CAM)
+# Assignment 2: Facial Emotion Recognition
 
 **Author:** Abdykassymov Abylay (Group SE-2420)  
-**Topic:** Facial Emotion Recognition (Happy, Sad, Neutral)
+**Classes:** Happy, Neutral, Sad  
+**Backbone:** MobileNetV2 pretrained on ImageNet  
+**Demo:** Streamlit + Grad-CAM
 
-## Project Overview
-This project upgrades the Assignment 1 Facial Emotion Recognition pipeline by integrating SOTA components, model explainability via Grad-CAM, and an interactive web demo.
+## Project overview
 
-## Structure
-- `src/`: Core ML scripts and modules (Grad-CAM, model architectures, training).
-- `app/`: Web app built with Streamlit.
-- `data/`: Dataset storage (ignored in git).
-- `models/`: Saved model weights.
-- `reports/`: Final assignment report and visual artifacts.
+This project classifies facial-expression images into three classes and provides a Grad-CAM visualization. The app includes a VASA-1-inspired talking-head evaluation workflow implemented with the openly available SadTalker research model. SadTalker animates one portrait from driving speech audio; MobileNetV2 classifies sampled generated-video frames and Grad-CAM visualizes frame-level attention. This is an alternative implementation of the assignment's talking-head concept, not Microsoft's VASA-1.
+
+The training script supports two comparable experiments:
+- **Baseline:** resize, tensor conversion and ImageNet normalization.
+- **Augmented:** the same model and training setup, with random rotation, horizontal flip, color jitter and affine transformations applied to training images.
+
+These are data-augmentation experiments, not a claim that a new state-of-the-art architecture or method has been implemented.
+
+## Dataset layout
+
+Place the dataset in the following structure:
+
+```text
+data/
+  train/
+    Happy/
+    Neutral/
+    Sad/
+  val/
+    Happy/
+    Neutral/
+    Sad/
+  test/
+    Happy/
+    Neutral/
+    Sad/
+```
+
+All three splits are mandatory and must contain the same class folders. The script stops with an error if a split is missing or a class folder is absent. It never silently reuses the training set as validation data.
+
+**Important split protocol:** split original subjects/images into train, validation and test sets *before* generating augmented copies. Keep all transformed copies of an original image in the training split only. Where subject identities are available, split by subject rather than by individual image to reduce identity leakage. Do not use the test split for tuning.
+
+The dataset is excluded from Git. Document the dataset source, license, subject-level split procedure and class counts in the report.
+
+## Installation
+
+Use Python 3.10+ for the main project and install its dependencies:
+
+```bash
+pip install -r requirements.txt
+```
+
+## Training and evaluation
+
+Run both experiments with the same fixed train/validation/test folders:
+
+```bash
+python src/train.py --experiment all --epochs 5
+```
+
+The baseline checkpoint is saved as `models/baseline_mobilenet_emotion.pth`. To run an **ArtAug-inspired hard-case improvement loop** for the assignment's backlight/pose cases:
+
+```bash
+python src/artaug.py --top-k 50
+```
+
+The script ranks only images from `data/train` by the baseline model's true-class confidence, then creates four label-preserving low-light/backlight/pose variants for the most difficult training examples. Review the generated images in `data/artaug_train/<class>/`, then copy approved variants into the matching `data/train/<class>/` folders and retrain:
+
+```bash
+python src/train.py --experiment augmented --epochs 5
+```
+
+This is an **ArtAug-inspired local synthesis-understanding loop**, not the official ArtAug system. It must never mine or add validation/test images to training. Keep the original validation/test splits unchanged and compare held-out test Macro-F1 before and after the hard-case augmentation.
+
+Or run one experiment:
+
+```bash
+python src/train.py --experiment baseline --epochs 5
+python src/train.py --experiment augmented --epochs 5
+```
+
+The script sets random seeds, selects the best checkpoint by validation Macro-F1, then evaluates that checkpoint once on the held-out test set. It prints a per-class classification report and writes:
+- `results/baseline_metrics.csv`
+- `results/augmented_metrics.csv`
+
+The augmented experiment also saves the app checkpoint to `models/mobilenet_emotion.pth`. Dataset splits must be identical between experiments for a fair comparison. For stronger reproducibility, record the Python/PyTorch/torchvision versions, hardware, dataset version and exact split manifest in the report.
+
+## Talking-head animation evaluation (VASA-1 concept)
+
+The assignment describes a VASA-1-style workflow: a portrait and audio are used to generate a talking-head video, then facial emotion is evaluated across frames. Microsoft's official VASA-1 release is not publicly available as a runnable model/API. To implement the same experimental concept reproducibly, this repository uses **SadTalker** as an explicitly named alternative talking-head generator (CVPR 2023). Do not describe the output as generated by VASA-1.
+
+### Install SadTalker separately
+
+SadTalker has an older dependency stack and should use its own Python 3.8 environment rather than sharing the main project's Python 3.10+ environment. Follow the official [OpenTalker/SadTalker installation guide](https://github.com/OpenTalker/SadTalker#1-installation), clone the repository, install its dependencies, and download its pretrained checkpoints:
+
+```bash
+git clone https://github.com/OpenTalker/SadTalker.git
+cd SadTalker
+# Follow the upstream Python 3.8 / PyTorch / FFmpeg instructions.
+bash scripts/download_models.sh
+```
+
+Run SadTalker in its dedicated environment and verify that `inference.py` and the `checkpoints/` directory are present. The demo invokes its documented CLI with portrait + audio, 256px rendering, batch size 1, crop preprocessing and still mode. Face enhancement is disabled by default to reduce GPU memory use. The generated MP4 is stored temporarily by the Streamlit session.
+
+### Run the animation experiment
+
+1. Train the augmented MobileNetV2 model and confirm `models/mobilenet_emotion.pth` exists.
+2. Start the main project with `streamlit run app/app.py`.
+3. Select **Talking-Head Animation Evaluation (SadTalker)**.
+4. Upload a consented portrait and a WAV/MP3 speech clip.
+5. Enter the local SadTalker repository path and the Python executable belonging to its dedicated environment.
+6. Generate the video. The app samples frames at approximately 1 FPS (up to 120 frames), predicts Happy/Neutral/Sad for each frame, plots class probabilities over time and shows selected Grad-CAM overlays.
+
+To calculate the requested `ΔMacro-F1`, upload a CSV with one manual ground-truth label per sampled frame:
+
+```csv
+frame,emotion
+1,Neutral
+2,Happy
+3,Happy
+4,Sad
+```
+
+The `frame` column is the 1-based sampled-frame index shown by the app; `emotion` must be `Happy`, `Neutral` or `Sad`. The app reports Macro-F1 for (a) the still-image prediction repeated across annotated frames, (b) predictions from the generated-video frames, and (c) `ΔMacro-F1 = video-frame Macro-F1 − still-image Macro-F1`. Use the same annotated frames for both conditions. Without independent frame labels, the app reports prediction consistency only; consistency is not F1.
+
+**Interpretation limitation:** SadTalker is audio-driven and generates mouth/head motion, but it is not designed to synthesize a requested emotion sequence. The resulting frame predictions measure the emotion classifier's behavior on SadTalker-generated frames; they do not prove that SadTalker generated the intended emotions. For a valid report, document the portrait/audio, manual annotation protocol, number of sampled frames, and any failed generations.
+
+### Hardware note
+
+The default 256px / batch-size-1 / no-enhancer configuration is a conservative starting point for GPUs with 6 GB VRAM. Actual compatibility depends on the SadTalker environment, CUDA/PyTorch versions and available memory. If local inference fails, run SadTalker separately on a compatible Colab/cloud GPU and then adapt the experiment to analyze the resulting MP4.
+
+## Run the application
+
+Train the augmented model first so that `models/mobilenet_emotion.pth` exists, then run:
+
+```bash
+streamlit run app/app.py
+```
+
+The app now stops with a clear error if the trained checkpoint is missing or incompatible; it will not silently make predictions using random weights.
+
+## Metrics and interpretation
+
+- **Accuracy:** fraction of predictions matching independent ground-truth labels.
+- **Macro-F1:** unweighted mean of per-class F1 scores; useful when class counts differ.
+- **Weighted-F1:** mean of per-class F1 weighted by class support.
+- **Prediction consistency:** fraction of noisy versions of one image that retain the clean image's predicted class. This is a robustness indicator only; it is not a ground-truth performance metric.
+
+The talking-head workflow evaluates generated video frames. SadTalker is an openly available alternative used to realize the VASA-1 concept; it is not VASA-1 itself.
+
+## Privacy
+
+Images uploaded to Streamlit are processed by the machine hosting the app. In a remote deployment, the image is transmitted to that server, not processed on the visitor's own computer. Do not upload identifiable images without appropriate consent. The app does not intentionally persist uploaded images or create biometric identity profiles; deployment operators should separately review server logs, temporary-file handling and hosting-provider policies.
+
+## Repository structure
+
+- `src/train.py`: reproducible baseline/augmentation experiments and held-out test evaluation.
+- `src/dataset.py`: training and evaluation transforms.
+- `src/augment_data.py`: optional offline augmentation utility. Do not run this before splitting the original dataset.
+- `app/app.py`: Streamlit interface, portrait Grad-CAM, and talking-head frame evaluation workflow.
+- `src/talking_head.py`: SadTalker CLI adapter and video-frame sampler.
+- `src/artaug.py`: training-only hard-case mining and targeted backlight/pose variants (ArtAug-inspired).
+- `data/`: local dataset (not committed).
+- `models/`: trained weights (not committed).
+- `results/`: generated metric CSV files.
