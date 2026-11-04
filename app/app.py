@@ -275,11 +275,7 @@ if mode == "Single Portrait & Grad-CAM":
 
 elif mode == "Talking-Head Animation Evaluation (SadTalker)":
   st.subheader("VASA-1-inspired Talking-Head Evaluation")
-  st.warning(
-      "This is a concept-level implementation using SadTalker, not Microsoft's "
-      "VASA-1. SadTalker generates the talking-head video; MobileNetV2 then "
-      "classifies sampled frames independently."
-  )
+ 
   st.markdown(
       "Upload a portrait and speech audio. The app runs the locally installed "
       "SadTalker inference script, then produces an emotion timeline and "
@@ -316,10 +312,6 @@ elif mode == "Talking-Head Animation Evaluation (SadTalker)":
   consent_given = st.checkbox(
       "I have permission to use this person's portrait and audio, and understand the generated video is synthetic.",
       value=False,
-  )
-  st.caption(
-      "Synthetic-media notice: generated output is AI-animated and must be disclosed as synthetic. "
-      "Do not use another person's face or voice without consent."
   )
 
   if st.button(
@@ -513,4 +505,6 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-#python3 -m streamlit run app/app.py --server.address 127.0.0.1
+#cd SadTalker
+#conda activate sadtalker
+#python3 -m streamlit run app/app.py
